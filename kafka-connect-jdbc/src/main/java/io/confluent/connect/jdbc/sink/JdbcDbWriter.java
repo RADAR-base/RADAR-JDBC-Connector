@@ -69,7 +69,7 @@ public class JdbcDbWriter {
     try {
       final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
       for (SinkRecord record : records) {
-        final TableId tableId = destinationTable(record.topic());
+        final TableId tableId = destinationTable(record);
         BufferedRecords buffer = bufferByTable.get(tableId);
         if (buffer == null) {
           buffer = new BufferedRecords(config, tableId, dbDialect, dbStructure, connection);
@@ -100,12 +100,19 @@ public class JdbcDbWriter {
     cachedConnectionProvider.close();
   }
 
-  TableId destinationTable(String topic) {
-    final String tableName = config.tableNameFormat.replace("${topic}", topic);
+  TableId destinationTable(SinkRecord record) {
+    StringBuilder name = new StringBuilder();
+    final String schemaName = destinationSchema(record);
+    if (!schemaName.isEmpty()) {
+      name.append(schemaName).append(".");
+    }
+    name.append(config.tableNameFormat.replace("${topic}", record.topic()));
+
+    final String tableName = name.toString();
     if (tableName.isEmpty()) {
       throw new ConnectException(String.format(
           "Destination table name for topic '%s' is empty using the format string '%s'",
-          topic,
+          record.topic(),
           config.tableNameFormat
       ));
     }

@@ -114,7 +114,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
         + "the connector may fail to write to tables with long names";
     // https://stackoverflow.com/questions/27865770/how-long-can-postgresql-table-names-be/27865772#27865772
     String nameLengthQuery = "SELECT length(repeat('1234567890', 1000)::NAME);";
-    
+
     int result;
     try (ResultSet rs = connection.createStatement().executeQuery(nameLengthQuery)) {
       if (rs.next()) {

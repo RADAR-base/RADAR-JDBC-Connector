@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
 public class JdbcSourceConnectorConfig extends AbstractConfig {
 
   private static final Logger LOG = LoggerFactory.getLogger(JdbcSourceConnectorConfig.class);
-  private static Pattern INVALID_CHARS = Pattern.compile("[^a-zA-Z0-9._-]");
+  private static final Pattern INVALID_CHARS = Pattern.compile("[^a-zA-Z0-9._-]");
 
   public static final String CONNECTION_PREFIX = "connection.";
 
@@ -300,7 +300,7 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
 
   public static final String QUERY_SUFFIX_CONFIG = "query.suffix";
   public static final String QUERY_SUFFIX_DEFAULT = "";
-  public static final String QUERY_SUFFIX_DOC = 
+  public static final String QUERY_SUFFIX_DOC =
       "Suffix to append at the end of the generated query.";
   public static final String QUERY_SUFFIX_DISPLAY = "Query suffix";
 

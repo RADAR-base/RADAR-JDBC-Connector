@@ -58,6 +58,9 @@ public abstract class DatabaseDialectProvider {
    * supported by one or more drivers. The contents and syntax of the {@code subname} will depend on
    * the subprotocol.
    */
+  /**
+   *
+   */
   public interface JdbcUrlInfo {
 
     /**

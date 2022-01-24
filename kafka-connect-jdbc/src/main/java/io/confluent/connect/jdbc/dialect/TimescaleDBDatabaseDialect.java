@@ -50,8 +50,7 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     }
   }
 
-  static final int CHUNK_TIME_INTERVAL = 86400000;
-  static final String DELIMITER = ";";
+  static final String CHUNK_TIME_INTERVAL = "1 day";
   static final String HYPERTABLE_WARNING = "A result was returned when none was expected";
 
   /**
@@ -64,11 +63,10 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  public List<String> buildCreateTableStatements(
-          TableId table,
-          Collection<SinkRecordField> fields
-  ) {
-    // This would create the schema and table then convert the table to a hyper table.
+  public List<String> buildCreateTableStatements(TableId table,
+      Collection<SinkRecordField> fields) {
+    // This would create the schema and table then convert the table to a hyper
+    // table.
     List<String> sqlQueries = new ArrayList<>();
     if (table.schemaName() != null) {
       sqlQueries.add(buildCreateSchemaStatement(table));
@@ -79,23 +77,18 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     return sqlQueries;
   }
 
-
-  public String buildCreateHyperTableStatement(
-          TableId table
-  ) {
+  public String buildCreateHyperTableStatement(TableId table) {
     ExpressionBuilder builder = expressionBuilder();
 
     builder.append("SELECT create_hypertable('");
     builder.append(table);
-    builder.append("', 'time', migrate_data => TRUE, chunk_time_interval => ");
+    builder.append("', 'time', migrate_data => TRUE, chunk_time_interval => INTERVAL '");
     builder.append(CHUNK_TIME_INTERVAL);
-    builder.append(");");
+    builder.append("');");
     return builder.toString();
   }
 
-  public String buildCreateSchemaStatement(
-          TableId table
-  ) {
+  public String buildCreateSchemaStatement(TableId table) {
     ExpressionBuilder builder = expressionBuilder();
 
     builder.append("CREATE SCHEMA IF NOT EXISTS ");
@@ -104,10 +97,8 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  public void applyDdlStatements(
-          Connection connection,
-          List<String> statements
-  ) throws SQLException {
+  public void applyDdlStatements(Connection connection,
+      List<String> statements) throws SQLException {
     // This overrides the function by catching 'result was returned' error thrown by PSQL
     // when creating hypertables
     try {
@@ -121,7 +112,7 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
 
   @Override
   protected String getSqlType(SinkRecordField field) {
-    if (field.schemaName() == Timestamp.LOGICAL_NAME) {
+    if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) {
       return "TIMESTAMPTZ";
     } else {
       return super.getSqlType(field);
@@ -129,21 +120,14 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  protected void formatColumnValue(
-          ExpressionBuilder builder,
-          String schemaName,
-          Map<String, String> schemaParameters,
-          Schema.Type type,
-          Object value
-  ) {
-    if (schemaName == org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME) {
+  protected void formatColumnValue(ExpressionBuilder builder, String schemaName,
+      Map<String, String> schemaParameters, Schema.Type type, Object value) {
+    if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
       builder.appendStringQuoted(
-              DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone())
-      );
+              DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
     } else {
       super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
     }
   }
-
 
 }
