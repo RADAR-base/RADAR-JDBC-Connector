@@ -29,7 +29,7 @@ jobs:
         with:
           images: ${{ env.DOCKER_IMAGE }}
           tags: |
-            type=ref
+            type=ref,event=branch
 
       - name: Cache Docker layers
         uses: actions/cache@v2
