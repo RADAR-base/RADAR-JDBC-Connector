@@ -78,7 +78,7 @@ public class BufferedRecords {
     this.recordValidator = RecordValidator.create(config);
   }
 
-  public List<SinkRecord> add(SinkRecord record) throws SQLException {
+  public List<SinkRecord> add(SinkRecord record) throws SQLException, TableAlterOrCreateException {
     recordValidator.validate(record);
     final List<SinkRecord> flushed = new ArrayList<>();
 
@@ -142,6 +142,7 @@ public class BufferedRecords {
           config.pkMode,
           schemaPair,
           fieldsMetadata,
+          dbStructure.tableDefinition(connection, tableId),
           config.insertMode
       );
       if (config.deleteEnabled && nonNull(deleteSql)) {
@@ -151,6 +152,7 @@ public class BufferedRecords {
             config.pkMode,
             schemaPair,
             fieldsMetadata,
+            dbStructure.tableDefinition(connection, tableId),
             config.insertMode
         );
       }
@@ -262,13 +264,14 @@ public class BufferedRecords {
     }
   }
 
-  private String getInsertSql() {
+  private String getInsertSql() throws SQLException {
     switch (config.insertMode) {
       case INSERT:
         return dbDialect.buildInsertStatement(
             tableId,
             asColumns(fieldsMetadata.keyFieldNames),
-            asColumns(fieldsMetadata.nonKeyFieldNames)
+            asColumns(fieldsMetadata.nonKeyFieldNames),
+            dbStructure.tableDefinition(connection, tableId)
         );
       case UPSERT:
         if (fieldsMetadata.keyFieldNames.isEmpty()) {
@@ -282,7 +285,8 @@ public class BufferedRecords {
           return dbDialect.buildUpsertQueryStatement(
               tableId,
               asColumns(fieldsMetadata.keyFieldNames),
-              asColumns(fieldsMetadata.nonKeyFieldNames)
+              asColumns(fieldsMetadata.nonKeyFieldNames),
+              dbStructure.tableDefinition(connection, tableId)
           );
         } catch (UnsupportedOperationException e) {
           throw new ConnectException(String.format(
@@ -295,7 +299,8 @@ public class BufferedRecords {
         return dbDialect.buildUpdateStatement(
             tableId,
             asColumns(fieldsMetadata.keyFieldNames),
-            asColumns(fieldsMetadata.nonKeyFieldNames)
+            asColumns(fieldsMetadata.nonKeyFieldNames),
+            dbStructure.tableDefinition(connection, tableId)
         );
       default:
         throw new ConnectException("Invalid insert mode");

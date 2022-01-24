@@ -18,10 +18,12 @@ package io.confluent.connect.jdbc.source;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Collections;
@@ -372,7 +374,7 @@ public class JdbcSourceTaskUpdateTest extends JdbcSourceTaskTestBase {
 
     db.insert(SINGLE_TABLE_NAME, "modified", DateTimeUtils.formatTimestamp(new Timestamp(10L), tz), "id", 1);
     db.insert(SINGLE_TABLE_NAME, "modified", DateTimeUtils.formatTimestamp(new Timestamp(currentTime+1000L), tz), "id", 2);
-    db.insert(SINGLE_TABLE_NAME, "modified", DateTimeUtils.formatTimestamp(new Timestamp(currentTime+1000L), tz), "id", 3);
+    db.insert(SINGLE_TABLE_NAME, "modified", DateTimeUtils.formatTimestamp(new Timestamp(currentTime+1001L), tz), "id", 3);
 
     startTask("modified", null, null, 4L, tz.getID(), -1L);
 
@@ -952,6 +954,12 @@ public class JdbcSourceTaskUpdateTest extends JdbcSourceTaskTestBase {
                               String topic)
       throws Exception {
     List<SourceRecord> records = task.poll();
+    int count = 0;
+    while(records == null && count++ < 5) {
+      records = task.poll();
+      Thread.sleep(500);
+    }
+    assertNotNull(records);
     assertEquals(numRecords, records.size());
 
     HashMap<T, Integer> valueCounts = new HashMap<>();

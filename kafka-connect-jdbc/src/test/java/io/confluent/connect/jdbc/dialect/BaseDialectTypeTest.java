@@ -17,39 +17,24 @@ package io.confluent.connect.jdbc.dialect;
 
 import java.math.BigDecimal;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Collection;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TimeZone;
 
-import io.confluent.connect.jdbc.sink.JdbcSinkConfig;
-import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
 import io.confluent.connect.jdbc.source.ColumnMapping;
 import io.confluent.connect.jdbc.source.JdbcSourceConnectorConfig;
 import io.confluent.connect.jdbc.util.ColumnDefinition;
 import io.confluent.connect.jdbc.util.ColumnId;
 import io.confluent.connect.jdbc.util.TableId;
 
-import org.apache.kafka.connect.data.Date;
-import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
-import org.apache.kafka.connect.data.Struct;
-import org.apache.kafka.connect.data.Time;
-import org.apache.kafka.connect.data.Timestamp;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runners.Parameterized;
 import org.mockito.Mock;
 
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -108,7 +93,7 @@ public abstract class BaseDialectTypeTest<T extends GenericDatabaseDialect> {
 
   @SuppressWarnings("deprecation")
   @Test
-  public void testValueConversionOnNumeric() throws Exception {
+  public void testValueConversion() throws Exception {
     when(columnDefn.precision()).thenReturn(precision);
     when(columnDefn.scale()).thenReturn(scale);
     when(columnDefn.type()).thenReturn(columnType);
@@ -138,6 +123,25 @@ public abstract class BaseDialectTypeTest<T extends GenericDatabaseDialect> {
     when(resultSet.getByte(1)).thenReturn(BYTE);
     when(resultSet.getDouble(1)).thenReturn(DOUBLE);
 
+    if (expectedValue instanceof String) {
+      when(resultSet.getString(1)).thenReturn((String)expectedValue);
+    }
+
+    // For BigDecimal, ensure we're adding precision and scale as schema parameters
+    // Special case: scale of -127 (NUMERIC_TYPE_SCALE_UNSET) indicates scale is unset, which is overridden to 127
+    if (expectedValue instanceof BigDecimal) {
+      assertEquals(precision,
+          Integer.parseInt(field.schema().parameters().get("connect.decimal.precision")));
+
+      if (scale != -127) {
+        assertEquals(scale,
+            Integer.parseInt(field.schema().parameters().get("scale")));
+      } else {
+        assertEquals(127,
+            Integer.parseInt(field.schema().parameters().get("scale")));
+      }
+    }
+
     // Check the converter operates correctly
     ColumnMapping mapping = new ColumnMapping(columnDefn, 1, field);
     converter = dialect.columnConverterFor(
@@ -147,6 +151,7 @@ public abstract class BaseDialectTypeTest<T extends GenericDatabaseDialect> {
         true
     );
     Object value = converter.convert(resultSet);
+
     if (value instanceof Number && expectedValue instanceof Number) {
       assertEquals(((Number) expectedValue).floatValue(), ((Number) value).floatValue(), 0.01d);
     } else {
