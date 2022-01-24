@@ -20,11 +20,7 @@ RUN mkdir /code /code/kafka-connect-jdbc
 WORKDIR /code/kafka-connect-jdbc
 
 # Install maven dependency packages (keep in image)
-COPY kafka-connect-jdbc/pom.xml /code/kafka-connect-jdbc
-RUN mvn dependency:resolve
-
-# Package into JAR
-COPY kafka-connect-jdbc/src /code/kafka-connect-jdbc/src
+COPY kafka-connect-jdbc /code/kafka-connect-jdbc
 RUN mvn package -DskipTests -Dcheckstyle.skip
 
 WORKDIR /code

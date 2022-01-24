@@ -1,0 +1,71 @@
+
+
+# Controls when the action will run.
+on:
+  # Triggers the workflow on push or pull request events but only for the master branch
+  push:
+    branches: [master, dev]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+  # Build and push tagged release docker image
+  docker:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - uses: actions/checkout@v2
+
+      # Add Docker labels and tags
+      - name: Docker meta
+        id: docker_meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref
+
+      - name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          # Key is named differently to avoid collision
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          # Allow running the image on the architectures supported by openjdk:11-jre-slim
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          context: .
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,mode=max,dest=/tmp/.buildx-cache-new
+          # Use runtime labels from docker_meta as well as fixed labels
+          labels: |
+            ${{ steps.docker_meta.outputs.labels }}
+            maintainer=Joris Borgdorff <joris@thehyve.nl>
+            org.opencontainers.image.authors=Pauline Conde @mpgxvii, Joris Borgdorff <joris@thehyve.nl>
+            org.opencontainers.image.vendor=RADAR-base
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Inspect image
+        run: |
+          docker pull ${{ env.DOCKER_IMAGE }}:${{ steps.docker_meta.outputs.version }}
+          docker image inspect ${{ env.DOCKER_IMAGE }}:${{ steps.docker_meta.outputs.version }}
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
