@@ -305,24 +305,6 @@ public class PostgreSqlDatabaseDialectTest extends BaseDialectTest<PostgreSqlDat
   }
 
   @Test
-  public void shouldComputeValueTypeCast() {
-    TableDefinitionBuilder builder = new TableDefinitionBuilder().withTable("myTable");
-    builder.withColumn("id1").type("int", JDBCType.INTEGER, Integer.class);
-    builder.withColumn("id2").type("int", JDBCType.INTEGER, Integer.class);
-    builder.withColumn("columnA").type("varchar", JDBCType.VARCHAR, Integer.class);
-    builder.withColumn("uuidColumn").type("uuid", JDBCType.OTHER, UUID.class);
-    builder.withColumn("dateColumn").type("date", JDBCType.DATE, java.sql.Date.class);
-    TableDefinition tableDefn = builder.build();
-    ColumnId uuidColumn = tableDefn.definitionForColumn("uuidColumn").id();
-    ColumnId dateColumn = tableDefn.definitionForColumn("dateColumn").id();
-    assertEquals("", dialect.valueTypeCast(tableDefn, columnPK1));
-    assertEquals("", dialect.valueTypeCast(tableDefn, columnPK2));
-    assertEquals("", dialect.valueTypeCast(tableDefn, columnA));
-    assertEquals("::uuid", dialect.valueTypeCast(tableDefn, uuidColumn));
-    assertEquals("", dialect.valueTypeCast(tableDefn, dateColumn));
-  }
-
-  @Test
   public void createOneColNoPk() {
     verifyCreateOneColNoPk(
         "CREATE TABLE \"myTable\" (" + System.lineSeparator() + "\"col1\" INT NOT NULL)");
