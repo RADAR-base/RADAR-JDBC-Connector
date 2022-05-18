@@ -129,22 +129,22 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
 
   @Override
   protected String getSqlType(SinkRecordField field) {
-    if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) {
-      return "TIMESTAMPTZ";
-    } else {
-      return super.getSqlType(field);
+    if (field.schemaName() != null) {
+      if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) return "TIMESTAMPTZ";
     }
+    return super.getSqlType(field);
   }
 
   @Override
   protected void formatColumnValue(ExpressionBuilder builder, String schemaName,
       Map<String, String> schemaParameters, Schema.Type type, Object value) {
-    if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
-      builder.appendStringQuoted(
-              DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
-    } else {
-      super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
+    if (schemaName != null) {
+      if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
+        builder.appendStringQuoted(
+                DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
+      }
     }
+    super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
   }
 
 }
