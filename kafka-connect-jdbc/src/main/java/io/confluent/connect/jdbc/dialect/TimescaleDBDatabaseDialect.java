@@ -23,6 +23,8 @@ import io.confluent.connect.jdbc.util.TableId;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Timestamp;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -51,6 +53,9 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
       return new TimescaleDBDatabaseDialect(config);
     }
   }
+
+  private static final Logger log = LoggerFactory.getLogger(TimescaleDBDatabaseDialect.class);
+
 
   static final String CHUNK_TIME_INTERVAL = "1 day";
   static final String DELIMITER = ";";
