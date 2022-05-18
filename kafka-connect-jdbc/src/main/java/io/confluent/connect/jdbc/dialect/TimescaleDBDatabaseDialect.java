@@ -67,7 +67,8 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  public List<String> buildCreateTableStatements(TableId table, Collection<SinkRecordField> fields) {
+  public List<String> buildCreateTableStatements(TableId table,
+      Collection<SinkRecordField> fields) {
     // This would create the schema and table then convert the table to a hyper
     // table.
     List<String> sqlQueries = new ArrayList<>();
@@ -113,9 +114,9 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  public void applyDdlStatements(Connection connection, List<String> statements) throws SQLException {
-    // This overrides the function by catching 'result was returned' error thrown by
-    // PSQL
+  public void applyDdlStatements(Connection connection,
+      List<String> statements) throws SQLException {
+    // This overrides the function by catching 'result was returned' error thrown by PSQL
     // when creating hypertables
     try {
       super.applyDdlStatements(connection, statements);
@@ -128,7 +129,7 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
 
   @Override
   protected String getSqlType(SinkRecordField field) {
-    if (field.schemaName() == Timestamp.LOGICAL_NAME) {
+    if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) {
       return "TIMESTAMPTZ";
     } else {
       return super.getSqlType(field);
@@ -136,10 +137,11 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  protected void formatColumnValue(ExpressionBuilder builder, String schemaName, Map<String, String> schemaParameters,
-      Schema.Type type, Object value) {
-    if (schemaName == org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME) {
-      builder.appendStringQuoted(DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
+  protected void formatColumnValue(ExpressionBuilder builder, String schemaName,
+      Map<String, String> schemaParameters, Schema.Type type, Object value) {
+    if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
+      builder.appendStringQuoted(
+              DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
     } else {
       super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
     }

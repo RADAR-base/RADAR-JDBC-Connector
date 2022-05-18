@@ -15,6 +15,7 @@
 
 package io.confluent.connect.jdbc.source;
 
+import java.sql.SQLNonTransientException;
 import java.util.TimeZone;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.SystemTime;
@@ -39,6 +40,9 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.dialect.DatabaseDialects;
@@ -53,6 +57,8 @@ import io.confluent.connect.jdbc.util.Version;
  * generates Kafka Connect records.
  */
 public class JdbcSourceTask extends SourceTask {
+  // When no results, periodically return control flow to caller to give it a chance to pause us.
+  private static final int CONSECUTIVE_EMPTY_RESULTS_BEFORE_RETURN = 3;
 
   private static final Logger log = LoggerFactory.getLogger(JdbcSourceTask.class);
 
@@ -62,6 +68,7 @@ public class JdbcSourceTask extends SourceTask {
   private CachedConnectionProvider cachedConnectionProvider;
   private PriorityQueue<TableQuerier> tableQueue = new PriorityQueue<TableQuerier>();
   private final AtomicBoolean running = new AtomicBoolean(false);
+  private final AtomicLong taskThreadId = new AtomicLong(0);
 
   public JdbcSourceTask() {
     this.time = new SystemTime();
@@ -193,15 +200,17 @@ public class JdbcSourceTask extends SourceTask {
       }
       offset = computeInitialOffset(tableOrQuery, offset, timeZone);
 
-      String topicPrefix = config.getString(JdbcSourceTaskConfig.TOPIC_PREFIX_CONFIG);
+      String topicPrefix = config.topicPrefix();
+      JdbcSourceConnectorConfig.TimestampGranularity timestampGranularity
+          = JdbcSourceConnectorConfig.TimestampGranularity.get(config);
 
       if (mode.equals(JdbcSourceTaskConfig.MODE_BULK)) {
         tableQueue.add(
             new BulkTableQuerier(
-                dialect, 
-                queryMode, 
-                tableOrQuery, 
-                topicPrefix, 
+                dialect,
+                queryMode,
+                tableOrQuery,
+                topicPrefix,
                 suffix
             )
         );
@@ -217,22 +226,23 @@ public class JdbcSourceTask extends SourceTask {
                 offset,
                 timestampDelayInterval,
                 timeZone,
-                suffix
+                suffix,
+                timestampGranularity
             )
         );
       } else if (mode.equals(JdbcSourceTaskConfig.MODE_TIMESTAMP)) {
         tableQueue.add(
-            new TimestampIncrementingTableQuerier(
+            new TimestampTableQuerier(
                 dialect,
                 queryMode,
                 tableOrQuery,
                 topicPrefix,
                 timestampColumns,
-                null,
                 offset,
                 timestampDelayInterval,
                 timeZone,
-                suffix
+                suffix,
+                timestampGranularity
             )
         );
       } else if (mode.endsWith(JdbcSourceTaskConfig.MODE_TIMESTAMP_INCREMENTING)) {
@@ -247,13 +257,15 @@ public class JdbcSourceTask extends SourceTask {
                 offset,
                 timestampDelayInterval,
                 timeZone,
-                suffix
+                suffix,
+                timestampGranularity
             )
         );
       }
     }
 
     running.set(true);
+    taskThreadId.set(Thread.currentThread().getId());
     log.info("Started JDBC source task");
   }
 
@@ -311,9 +323,14 @@ public class JdbcSourceTask extends SourceTask {
   @Override
   public void stop() throws ConnectException {
     log.info("Stopping JDBC source task");
+
+    // In earlier versions of Kafka, stop() was not called from the task thread. In this case, all
+    // resources are closed at the end of 'poll()' when no longer running or if there is an error.
     running.set(false);
-    // All resources are closed at the end of 'poll()' when no longer running or
-    // if there is an error
+
+    if (taskThreadId.longValue() == Thread.currentThread().getId()) {
+      shutdown();
+    }
   }
 
   protected void closeResources() {
@@ -342,6 +359,8 @@ public class JdbcSourceTask extends SourceTask {
   public List<SourceRecord> poll() throws InterruptedException {
     log.trace("{} Polling for new data");
 
+    Map<TableQuerier, Integer> consecutiveEmptyResults = tableQueue.stream().collect(
+        Collectors.toMap(Function.identity(), (q) -> 0));
     while (running.get()) {
       final TableQuerier querier = tableQueue.peek();
 
@@ -351,6 +370,7 @@ public class JdbcSourceTask extends SourceTask {
             + config.getInt(JdbcSourceTaskConfig.POLL_INTERVAL_MS_CONFIG);
         final long now = time.milliseconds();
         final long sleepMs = Math.min(nextUpdate - now, 100);
+
         if (sleepMs > 0) {
           log.trace("Waiting {} ms to poll {} next", nextUpdate - now, querier.toString());
           time.sleep(sleepMs);
@@ -372,42 +392,64 @@ public class JdbcSourceTask extends SourceTask {
         if (!hadNext) {
           // If we finished processing the results from the current query, we can reset and send
           // the querier to the tail of the queue
-          resetAndRequeueHead(querier);
+          resetAndRequeueHead(querier, false);
         }
 
         if (results.isEmpty()) {
+          consecutiveEmptyResults.compute(querier, (k, v) -> v + 1);
           log.trace("No updates for {}", querier.toString());
-          continue;
+
+          if (Collections.min(consecutiveEmptyResults.values())
+              >= CONSECUTIVE_EMPTY_RESULTS_BEFORE_RETURN) {
+            log.trace("More than " + CONSECUTIVE_EMPTY_RESULTS_BEFORE_RETURN
+                + " consecutive empty results for all queriers, returning");
+            return null;
+          } else {
+            continue;
+          }
+        } else {
+          consecutiveEmptyResults.put(querier, 0);
         }
 
-        log.debug("Returning {} records for {}", results.size(), querier.toString());
+        log.debug("Returning {} records for {}", results.size(), querier);
         return results;
+      } catch (SQLNonTransientException sqle) {
+        log.error("Non-transient SQL exception while running query for table: {}",
+            querier, sqle);
+        resetAndRequeueHead(querier, true);
+        // This task has failed, so close any resources (may be reopened if needed) before throwing
+        closeResources();
+        throw new ConnectException(sqle);
       } catch (SQLException sqle) {
-        log.error("Failed to run query for table {}: {}", querier.toString(), sqle);
-        resetAndRequeueHead(querier);
+        log.error("SQL exception while running query for table: {}", querier, sqle);
+        resetAndRequeueHead(querier, true);
         return null;
       } catch (Throwable t) {
-        resetAndRequeueHead(querier);
+        log.error("Failed to run query for table: {}", querier, t);
+        resetAndRequeueHead(querier, true);
         // This task has failed, so close any resources (may be reopened if needed) before throwing
         closeResources();
         throw t;
       }
     }
 
-    // Only in case of shutdown
-    final TableQuerier querier = tableQueue.peek();
-    if (querier != null) {
-      resetAndRequeueHead(querier);
-    }
-    closeResources();
+    shutdown();
     return null;
   }
 
-  private void resetAndRequeueHead(TableQuerier expectedHead) {
+  private void shutdown() {
+    final TableQuerier querier = tableQueue.peek();
+    if (querier != null) {
+      resetAndRequeueHead(querier, true);
+    }
+    closeResources();
+  }
+
+  private void resetAndRequeueHead(TableQuerier expectedHead, boolean resetOffset) {
     log.debug("Resetting querier {}", expectedHead.toString());
     TableQuerier removedQuerier = tableQueue.poll();
     assert removedQuerier == expectedHead;
-    expectedHead.reset(time.milliseconds());
+    expectedHead.reset(time.milliseconds(), resetOffset);
     tableQueue.add(expectedHead);
   }
 
