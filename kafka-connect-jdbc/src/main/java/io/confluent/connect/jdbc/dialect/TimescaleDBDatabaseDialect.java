@@ -23,6 +23,8 @@ import io.confluent.connect.jdbc.util.TableId;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Timestamp;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -30,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * A {@link DatabaseDialect} for TimescaleDB.
@@ -50,8 +53,13 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     }
   }
 
+  private static final Logger log = LoggerFactory.getLogger(TimescaleDBDatabaseDialect.class);
+
+
   static final String CHUNK_TIME_INTERVAL = "1 day";
+  static final String DELIMITER = ";";
   static final String HYPERTABLE_WARNING = "A result was returned when none was expected";
+  static final String TIME_COLUMN = "time";
 
   /**
    * Create a new dialect instance with the given connector configuration.
@@ -72,17 +80,25 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
       sqlQueries.add(buildCreateSchemaStatement(table));
     }
     sqlQueries.add(super.buildCreateTableStatement(table, fields));
-    sqlQueries.add(buildCreateHyperTableStatement(table));
+
+    Optional<SinkRecordField> timeField = getTimeField(fields);
+    if (!timeField.isPresent()) {
+      log.warn("Time column is not present. Skipping hypertable creation..");
+    } else {
+      sqlQueries.add(buildCreateHyperTableStatement(table, timeField.get().name()));
+    }
 
     return sqlQueries;
   }
 
-  public String buildCreateHyperTableStatement(TableId table) {
+  public String buildCreateHyperTableStatement(TableId table, String timeColumn) {
     ExpressionBuilder builder = expressionBuilder();
 
     builder.append("SELECT create_hypertable('");
     builder.append(table);
-    builder.append("', 'time', migrate_data => TRUE, chunk_time_interval => INTERVAL '");
+    builder.append("', '");
+    builder.append(timeColumn);
+    builder.append("', migrate_data => TRUE, chunk_time_interval => INTERVAL '");
     builder.append(CHUNK_TIME_INTERVAL);
     builder.append("');");
     return builder.toString();
@@ -94,6 +110,12 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     builder.append("CREATE SCHEMA IF NOT EXISTS ");
     builder.append(table.schemaName());
     return builder.toString();
+  }
+
+  private Optional<SinkRecordField> getTimeField(Collection<SinkRecordField> fields) {
+    return fields.stream()
+                  .filter(p -> p.name().toLowerCase().equals(TIME_COLUMN))
+                  .findFirst();
   }
 
   @Override
@@ -112,22 +134,24 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
 
   @Override
   protected String getSqlType(SinkRecordField field) {
-    if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) {
-      return "TIMESTAMPTZ";
-    } else {
-      return super.getSqlType(field);
+    if (field.schemaName() != null) {
+      if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) { 
+        return "TIMESTAMPTZ"; 
+      }
     }
+    return super.getSqlType(field);
   }
 
   @Override
   protected void formatColumnValue(ExpressionBuilder builder, String schemaName,
       Map<String, String> schemaParameters, Schema.Type type, Object value) {
-    if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
-      builder.appendStringQuoted(
-              DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
-    } else {
-      super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
+    if (schemaName != null) {
+      if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
+        builder.appendStringQuoted(
+                DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
+      }
     }
+    super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
   }
 
 }
