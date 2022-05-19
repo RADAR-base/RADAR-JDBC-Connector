@@ -30,7 +30,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -83,10 +82,11 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     sqlQueries.add(super.buildCreateTableStatement(table, fields));
 
     Optional<SinkRecordField> timeField = getTimeField(fields);
-    if (!timeField.isPresent()) 
+    if (!timeField.isPresent()) {
       log.warn("Time column is not present. Skipping hypertable creation..");
-    else 
+    } else {
       sqlQueries.add(buildCreateHyperTableStatement(table, timeField.get().name()));
+    }
 
     return sqlQueries;
   }
@@ -135,7 +135,9 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   @Override
   protected String getSqlType(SinkRecordField field) {
     if (field.schemaName() != null) {
-      if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) return "TIMESTAMPTZ";
+      if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) { 
+        return "TIMESTAMPTZ"; 
+      }
     }
     return super.getSqlType(field);
   }

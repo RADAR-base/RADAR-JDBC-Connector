@@ -34,7 +34,7 @@ LABEL description="Kafka JDBC connector"
 ENV CONNECT_PLUGIN_PATH /usr/share/kafka-connect/plugins
 
 # To isolate the classpath from the plugin path as recommended
-COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-10.3.1/confluentinc-kafka-connect-jdbc-10.3.1/ ${CONNECT_PLUGIN_PATH}/kafka-connect-jdbc/
+COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-10.3.2/confluentinc-kafka-connect-jdbc-10.3.2/ ${CONNECT_PLUGIN_PATH}/kafka-connect-jdbc/
 
 # Load topics validator
 COPY ./docker/kafka-wait /usr/bin/kafka-wait
