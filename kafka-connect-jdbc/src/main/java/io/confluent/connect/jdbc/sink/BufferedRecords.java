@@ -78,7 +78,7 @@ public class BufferedRecords {
     this.recordValidator = RecordValidator.create(config);
   }
 
-  public List<SinkRecord> add(SinkRecord record) throws SQLException {
+  public List<SinkRecord> add(SinkRecord record) throws SQLException, TableAlterOrCreateException {
     recordValidator.validate(record);
     final List<SinkRecord> flushed = new ArrayList<>();
 
@@ -142,6 +142,7 @@ public class BufferedRecords {
           config.pkMode,
           schemaPair,
           fieldsMetadata,
+          dbStructure.tableDefinition(connection, tableId),
           config.insertMode
       );
       if (config.deleteEnabled && nonNull(deleteSql)) {
@@ -151,6 +152,7 @@ public class BufferedRecords {
             config.pkMode,
             schemaPair,
             fieldsMetadata,
+            dbStructure.tableDefinition(connection, tableId),
             config.insertMode
         );
       }

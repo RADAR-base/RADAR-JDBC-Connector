@@ -23,6 +23,8 @@ import io.confluent.connect.jdbc.util.TableId;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Timestamp;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -52,6 +54,9 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     }
   }
 
+  private static final Logger log = LoggerFactory.getLogger(TimescaleDBDatabaseDialect.class);
+
+
   static final String CHUNK_TIME_INTERVAL = "1 day";
   static final String DELIMITER = ";";
   static final String HYPERTABLE_WARNING = "A result was returned when none was expected";
@@ -67,7 +72,8 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  public List<String> buildCreateTableStatements(TableId table, Collection<SinkRecordField> fields) {
+  public List<String> buildCreateTableStatements(TableId table,
+      Collection<SinkRecordField> fields) {
     // This would create the schema and table then convert the table to a hyper
     // table.
     List<String> sqlQueries = new ArrayList<>();
@@ -113,9 +119,9 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   }
 
   @Override
-  public void applyDdlStatements(Connection connection, List<String> statements) throws SQLException {
-    // This overrides the function by catching 'result was returned' error thrown by
-    // PSQL
+  public void applyDdlStatements(Connection connection,
+      List<String> statements) throws SQLException {
+    // This overrides the function by catching 'result was returned' error thrown by PSQL
     // when creating hypertables
     try {
       super.applyDdlStatements(connection, statements);
@@ -128,21 +134,22 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
 
   @Override
   protected String getSqlType(SinkRecordField field) {
-    if (field.schemaName() == Timestamp.LOGICAL_NAME) {
-      return "TIMESTAMPTZ";
-    } else {
-      return super.getSqlType(field);
+    if (field.schemaName() != null) {
+      if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) return "TIMESTAMPTZ";
     }
+    return super.getSqlType(field);
   }
 
   @Override
-  protected void formatColumnValue(ExpressionBuilder builder, String schemaName, Map<String, String> schemaParameters,
-      Schema.Type type, Object value) {
-    if (schemaName == org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME) {
-      builder.appendStringQuoted(DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
-    } else {
-      super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
+  protected void formatColumnValue(ExpressionBuilder builder, String schemaName,
+      Map<String, String> schemaParameters, Schema.Type type, Object value) {
+    if (schemaName != null) {
+      if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
+        builder.appendStringQuoted(
+                DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
+      }
     }
+    super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
   }
 
 }

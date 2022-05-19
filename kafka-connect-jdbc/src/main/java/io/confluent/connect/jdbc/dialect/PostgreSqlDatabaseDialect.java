@@ -15,27 +15,6 @@
 
 package io.confluent.connect.jdbc.dialect;
 
-import java.util.Collections;
-import java.util.Map;
-import org.apache.kafka.common.config.AbstractConfig;
-import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.connect.data.Date;
-import org.apache.kafka.connect.data.Decimal;
-import org.apache.kafka.connect.data.Schema;
-import org.apache.kafka.connect.data.Schema.Type;
-import org.apache.kafka.connect.data.SchemaBuilder;
-import org.apache.kafka.connect.data.Time;
-import org.apache.kafka.connect.data.Timestamp;
-
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Types;
-import java.util.Collection;
-import java.util.Set;
-import java.util.UUID;
-
 import io.confluent.connect.jdbc.dialect.DatabaseDialectProvider.SubprotocolBasedProvider;
 import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
 import io.confluent.connect.jdbc.source.ColumnMapping;
@@ -46,11 +25,40 @@ import io.confluent.connect.jdbc.util.ExpressionBuilder.Transform;
 import io.confluent.connect.jdbc.util.IdentifierRules;
 import io.confluent.connect.jdbc.util.TableDefinition;
 import io.confluent.connect.jdbc.util.TableId;
+import org.apache.kafka.common.config.AbstractConfig;
+import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.connect.data.Date;
+import org.apache.kafka.connect.data.Decimal;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.Schema.Type;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.apache.kafka.connect.data.Time;
+import org.apache.kafka.connect.data.Timestamp;
+import org.apache.kafka.connect.errors.DataException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Types;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * A {@link DatabaseDialect} for PostgreSQL.
  */
 public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
+
+  private static final Logger log = LoggerFactory.getLogger(PostgreSqlDatabaseDialect.class);
+
+  // Visible for testing
+  volatile int maxIdentifierLength = 0;
 
   /**
    * The provider for {@link PostgreSqlDatabaseDialect}.
@@ -88,6 +96,70 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
    */
   public PostgreSqlDatabaseDialect(AbstractConfig config) {
     super(config, new IdentifierRules(".", "\"", "\""));
+  }
+
+  @Override
+  public Connection getConnection() throws SQLException {
+    Connection result = super.getConnection();
+    synchronized (this) {
+      if (maxIdentifierLength <= 0) {
+        maxIdentifierLength = computeMaxIdentifierLength(result);
+      }
+    }
+    return result;
+  }
+
+  static int computeMaxIdentifierLength(Connection connection) {
+    String warningMessage = "Unable to query database for maximum table name length; "
+        + "the connector may fail to write to tables with long names";
+    // https://stackoverflow.com/questions/27865770/how-long-can-postgresql-table-names-be/27865772#27865772
+    String nameLengthQuery = "SELECT length(repeat('1234567890', 1000)::NAME);";
+
+    int result;
+    try (ResultSet rs = connection.createStatement().executeQuery(nameLengthQuery)) {
+      if (rs.next()) {
+        result = rs.getInt(1);
+        if (result <= 0) {
+          log.warn(
+              "Cannot accommodate maximum table name length of {} as it is not positive; "
+                  + "table name truncation will be disabled, "
+                  + "and the connector may fail to write to tables with long names",
+              result);
+          result = Integer.MAX_VALUE;
+        } else {
+          log.info(
+              "Maximum table name length for database is {} bytes",
+              result
+          );
+        }
+      } else {
+        log.warn(warningMessage);
+        result = Integer.MAX_VALUE;
+      }
+    } catch (SQLException e) {
+      log.warn(warningMessage, e);
+      result = Integer.MAX_VALUE;
+    }
+    return result;
+  }
+
+  @Override
+  public TableId parseTableIdentifier(String fqn) {
+    TableId result = super.parseTableIdentifier(fqn);
+    if (maxIdentifierLength > 0 && result.tableName().length() > maxIdentifierLength) {
+      String newTableName = result.tableName().substring(0, maxIdentifierLength);
+      log.debug(
+          "Truncating table name from {} to {} in order to respect maximum name length",
+          result.tableName(),
+          newTableName
+      );
+      result = new TableId(
+          result.catalogName(),
+          result.schemaName(),
+          newTableName
+      );
+    }
+    return result;
   }
 
   /**
@@ -233,7 +305,6 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     }
     switch (field.schemaType()) {
       case INT8:
-        return "SMALLINT";
       case INT16:
         return "SMALLINT";
       case INT32:
@@ -250,6 +321,13 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
         return "TEXT";
       case BYTES:
         return "BYTEA";
+      case ARRAY:
+        SinkRecordField childField = new SinkRecordField(
+              field.schema().valueSchema(),
+              field.name(),
+              field.isPrimaryKey()
+            );
+        return getSqlType(childField) + "[]";
       default:
         return super.getSqlType(field);
     }
@@ -360,6 +438,79 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     } else {
       super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
     }
+  }
+
+  @Override
+  protected boolean maybeBindPrimitive(
+      PreparedStatement statement,
+      int index,
+      Schema schema,
+      Object value
+  ) throws SQLException {
+
+    switch (schema.type()) {
+      case ARRAY: {
+        Class<?> valueClass = value.getClass();
+        Object newValue = null;
+        Collection<?> valueCollection;
+        if (Collection.class.isAssignableFrom(valueClass)) {
+          valueCollection = (Collection<?>) value;
+        } else if (valueClass.isArray()) {
+          valueCollection = Arrays.asList((Object[]) value);
+        } else {
+          throw new DataException(
+              String.format("Type '%s' is not supported for Array.", valueClass.getName())
+          );
+        }
+
+        // All typecasts below are based on pgjdbc's documentation on how to use primitive arrays
+        // - https://jdbc.postgresql.org/documentation/head/arrays.html
+        switch (schema.valueSchema().type()) {
+          case INT8: {
+            // Gotta do this the long way, as Postgres has no single-byte integer,
+            // so we want to cast to short as the next best thing, and we can't do that with
+            // toArray.
+
+            newValue = valueCollection.stream()
+                .map(o -> ((Byte) o).shortValue())
+                .toArray(Short[]::new);
+            break;
+          }
+          case INT32:
+            newValue = valueCollection.toArray(new Integer[0]);
+            break;
+          case INT16:
+            newValue = valueCollection.toArray(new Short[0]);
+            break;
+          case BOOLEAN:
+            newValue = valueCollection.toArray(new Boolean[0]);
+            break;
+          case STRING:
+            newValue = valueCollection.toArray(new String[0]);
+            break;
+          case FLOAT64:
+            newValue = valueCollection.toArray(new Double[0]);
+            break;
+          case FLOAT32:
+            newValue = valueCollection.toArray(new Float[0]);
+            break;
+          case INT64:
+            newValue = valueCollection.toArray(new Long[0]);
+            break;
+          default:
+            break;
+        }
+
+        if (newValue != null) {
+          statement.setObject(index, newValue, Types.ARRAY);
+          return true;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    return super.maybeBindPrimitive(statement, index, schema, value);
   }
 
   /**

@@ -59,6 +59,13 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
     assertPrimitiveMapping(Type.STRING, "text");
   }
 
+  @Override
+  @Test
+  public void bindFieldByteValue() throws SQLException {
+    int index = ThreadLocalRandom.current().nextInt();
+    verifyBindField(++index, Schema.INT8_SCHEMA, (byte) 42).setShort(index, (byte) 42);
+  }
+
   @Test
   public void shouldMapDecimalSchemaTypeToDecimalSqlType() {
     assertDecimalMapping(0, "decimal(38,0)");
@@ -185,7 +192,7 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
   @Test
   public void shouldBuildUpsertStatement() {
     assertEquals(
-        "merge into \"myTable\" with (HOLDLOCK) AS target using (select ? AS \"id1\", ?" +
+        "merge into \"myTable\" AS target using (select ? AS \"id1\", ?" +
         " AS \"id2\", ? AS \"columnA\", ? AS \"columnB\", ? AS \"columnC\", ? AS \"columnD\")" +
         " AS incoming on (target.\"id1\"=incoming.\"id1\" and target.\"id2\"=incoming" +
         ".\"id2\") when matched then update set \"columnA\"=incoming.\"columnA\"," +
@@ -193,14 +200,14 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
         "\"columnD\"=incoming.\"columnD\" when not matched then insert (\"columnA\", " +
         "\"columnB\", \"columnC\", \"columnD\", \"id1\", \"id2\") values (incoming.\"columnA\"," +
         "incoming.\"columnB\",incoming.\"columnC\",incoming.\"columnD\",incoming.\"id1\"," +
-        "incoming.\"id2\");",
+        "incoming.\"id2\")",
         dialect.buildUpsertQueryStatement(tableId, pkColumns, columnsAtoD)
     );
 
     quoteIdentfiiers = QuoteMethod.NEVER;
     dialect = createDialect();
     assertEquals(
-        "merge into myTable with (HOLDLOCK) AS target using (select ? AS id1, ?" +
+        "merge into myTable AS target using (select ? AS id1, ?" +
         " AS id2, ? AS columnA, ? AS columnB, ? AS columnC, ? AS columnD)" +
         " AS incoming on (target.id1=incoming.id1 and target.id2=incoming" +
         ".id2) when matched then update set columnA=incoming.columnA," +
@@ -208,7 +215,7 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
         "columnD=incoming.columnD when not matched then insert (columnA, " +
         "columnB, columnC, columnD, id1, id2) values (incoming.columnA," +
         "incoming.columnB,incoming.columnC,incoming.columnD,incoming.id1," +
-        "incoming.id2);",
+        "incoming.id2)",
         dialect.buildUpsertQueryStatement(tableId, pkColumns, columnsAtoD)
     );
   }
@@ -258,12 +265,12 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
   public void upsert1() {
     TableId customer = tableId("Customer");
     assertEquals(
-        "merge into \"Customer\" with (HOLDLOCK) AS target using (select ? AS \"id\", ? AS \"name\", ? " +
+        "merge into \"Customer\" AS target using (select ? AS \"id\", ? AS \"name\", ? " +
         "AS \"salary\", ? AS \"address\") AS incoming on (target.\"id\"=incoming.\"id\") when matched then update set " +
         "\"name\"=incoming.\"name\",\"salary\"=incoming.\"salary\",\"address\"=incoming" +
         ".\"address\" when not matched then insert " +
         "(\"name\", \"salary\", \"address\", \"id\") values (incoming.\"name\",incoming" +
-        ".\"salary\",incoming.\"address\",incoming.\"id\");",
+        ".\"salary\",incoming.\"address\",incoming.\"id\")",
         dialect.buildUpsertQueryStatement(
             customer,
             columns(customer, "id"),
@@ -274,12 +281,12 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
     quoteIdentfiiers = QuoteMethod.NEVER;
     dialect = createDialect();
     assertEquals(
-        "merge into Customer with (HOLDLOCK) AS target using (select ? AS id, ? AS name, ? " +
+        "merge into Customer AS target using (select ? AS id, ? AS name, ? " +
         "AS salary, ? AS address) AS incoming on (target.id=incoming.id) when matched then update set " +
         "name=incoming.name,salary=incoming.salary,address=incoming" +
         ".address when not matched then insert " +
         "(name, salary, address, id) values (incoming.name,incoming" +
-        ".salary,incoming.address,incoming.id);",
+        ".salary,incoming.address,incoming.id)",
         dialect.buildUpsertQueryStatement(
             customer,
             columns(customer, "id"),
@@ -292,13 +299,13 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
   public void upsert2() {
     TableId book = new TableId(null, null, "Book");
     assertEquals(
-        "merge into \"Book\" with (HOLDLOCK) AS target using (select ? AS \"author\", ? AS \"title\", ?" +
+        "merge into \"Book\" AS target using (select ? AS \"author\", ? AS \"title\", ?" +
         " AS \"ISBN\", ? AS \"year\", ? AS \"pages\")" +
         " AS incoming on (target.\"author\"=incoming.\"author\" and target.\"title\"=incoming.\"title\")" +
         " when matched then update set \"ISBN\"=incoming.\"ISBN\",\"year\"=incoming.\"year\"," +
         "\"pages\"=incoming.\"pages\" when not " +
         "matched then insert (\"ISBN\", \"year\", \"pages\", \"author\", \"title\") values (incoming" +
-        ".\"ISBN\",incoming.\"year\"," + "incoming.\"pages\",incoming.\"author\",incoming.\"title\");",
+        ".\"ISBN\",incoming.\"year\"," + "incoming.\"pages\",incoming.\"author\",incoming.\"title\")",
         dialect.buildUpsertQueryStatement(
             book,
             columns(book, "author", "title"),
@@ -309,13 +316,13 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
     quoteIdentfiiers = QuoteMethod.NEVER;
     dialect = createDialect();
     assertEquals(
-        "merge into Book with (HOLDLOCK) AS target using (select ? AS author, ? AS title, ?" +
+        "merge into Book AS target using (select ? AS author, ? AS title, ?" +
         " AS ISBN, ? AS year, ? AS pages)" +
         " AS incoming on (target.author=incoming.author and target.title=incoming.title)" +
         " when matched then update set ISBN=incoming.ISBN,year=incoming.year," +
         "pages=incoming.pages when not " +
         "matched then insert (ISBN, year, pages, author, title) values (incoming" +
-        ".ISBN,incoming.year," + "incoming.pages,incoming.author,incoming.title);",
+        ".ISBN,incoming.year," + "incoming.pages,incoming.author,incoming.title)",
         dialect.buildUpsertQueryStatement(
             book,
             columns(book, "author", "title"),
@@ -325,7 +332,7 @@ public class SybaseDatabaseDialectTest extends BaseDialectTest<SybaseDatabaseDia
   }
 
   @Test
-  public void bindFieldPrimitiveValues() throws SQLException {
+  public void bindFieldPrimitiveValuesExceptString() throws SQLException {
     int index = ThreadLocalRandom.current().nextInt();
     verifyBindField(++index, Schema.INT8_SCHEMA, (short) 42).setShort(index, (short) 42);
     verifyBindField(++index, Schema.INT8_SCHEMA, (short) -42).setShort(index, (short) -42);
