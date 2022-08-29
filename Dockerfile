@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG BASE_IMAGE=radarbase/kafka-connect-transform-keyvalue:7.0.1
+ARG BASE_IMAGE=radarbase/kafka-connect-transform-keyvalue:7.2.1
 
 FROM maven:3.8-jdk-11 as builder
 
@@ -34,7 +34,7 @@ LABEL description="Kafka JDBC connector"
 ENV CONNECT_PLUGIN_PATH /usr/share/kafka-connect/plugins
 
 # To isolate the classpath from the plugin path as recommended
-COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-10.3.2/confluentinc-kafka-connect-jdbc-10.3.2/ ${CONNECT_PLUGIN_PATH}/kafka-connect-jdbc/
+COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-10.5.2/confluentinc-kafka-connect-jdbc-10.5.2/ ${CONNECT_PLUGIN_PATH}/kafka-connect-jdbc/
 
 # Load topics validator
 COPY ./docker/kafka-wait /usr/bin/kafka-wait
