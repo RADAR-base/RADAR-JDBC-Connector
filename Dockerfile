@@ -13,7 +13,7 @@
 # limitations under the License.
 ARG BASE_IMAGE=radarbase/kafka-connect-transform-keyvalue:7.2.1
 
-FROM maven:3.8-jdk-11 as builder
+FROM --platform=$BUILDPLATFORM maven:3.8-jdk-11 as builder
 
 # Make kafka-connect-jdbc source folder
 RUN mkdir /code /code/kafka-connect-jdbc
