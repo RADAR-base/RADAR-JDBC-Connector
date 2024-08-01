@@ -30,7 +30,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,7 +57,6 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
 
 
   static final String CHUNK_TIME_INTERVAL = "1 day";
-  static final String DELIMITER = ";";
   static final String HYPERTABLE_WARNING = "A result was returned when none was expected";
   static final String TIME_COLUMN = "time";
 
@@ -83,10 +81,11 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     sqlQueries.add(super.buildCreateTableStatement(table, fields));
 
     Optional<SinkRecordField> timeField = getTimeField(fields);
-    if (!timeField.isPresent()) 
+    if (!timeField.isPresent()) {
       log.warn("Time column is not present. Skipping hypertable creation..");
-    else 
+    } else {
       sqlQueries.add(buildCreateHyperTableStatement(table, timeField.get().name()));
+    }
 
     return sqlQueries;
   }
@@ -114,7 +113,7 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
 
   private Optional<SinkRecordField> getTimeField(Collection<SinkRecordField> fields) {
     return fields.stream()
-                  .filter(p -> p.name().toLowerCase().equals(TIME_COLUMN))
+                  .filter(p -> p.name().equalsIgnoreCase(TIME_COLUMN))
                   .findFirst();
   }
 
@@ -135,7 +134,9 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
   @Override
   protected String getSqlType(SinkRecordField field) {
     if (field.schemaName() != null) {
-      if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) return "TIMESTAMPTZ";
+      if (field.schemaName().equals(Timestamp.LOGICAL_NAME)) {
+        return "TIMESTAMPTZ";
+      }
     }
     return super.getSqlType(field);
   }
@@ -146,7 +147,7 @@ public class TimescaleDBDatabaseDialect extends PostgreSqlDatabaseDialect {
     if (schemaName != null) {
       if (schemaName.equals(org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME)) {
         builder.appendStringQuoted(
-                DateTimeUtils.formatTimestamptz((java.util.Date) value, super.timeZone()));
+                DateTimeUtils.formatTimestamp((java.util.Date) value, super.timeZone()));
       }
     }
     super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
