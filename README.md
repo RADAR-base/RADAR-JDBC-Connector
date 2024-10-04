@@ -37,3 +37,23 @@ docker-compose up -d --build
 
 Code should be formatted using the [Google Java Code Style Guide](https://google.github.io/styleguide/javaguide.html).
 If you want to contribute a feature or fix browse our [issues](https://github.com/RADAR-base/RADAR-REST-Connector/issues), and please make a pull request.
+
+
+## Sentry monitoring
+
+To enable Sentry monitoring for the JDBC connector, follow these steps:
+
+1. Set a `SENTRY_DSN` environment variable that points to the desired Sentry DSN.
+2. (Optional) Set the `SENTRY_LOG_LEVEL` environment variable to control the minimum log level of
+   events sent to Sentry.
+   The default log level for Sentry is `WARN`. Possible values are `TRACE`, `DEBUG`, `INFO`, `WARN`,
+   and `ERROR`.
+
+For further configuration of Sentry via environmental variables see [here](https://docs.sentry.io/platforms/java/configuration/#configuration-via-the-runtime-environment). For instance:
+
+```
+SENTRY_LOG_LEVEL: 'ERROR'
+SENTRY_DSN: 'https://000000000000.ingest.de.sentry.io/000000000000'
+SENTRY_ATTACHSTACKTRACE: true
+SENTRY_STACKTRACE_APP_PACKAGES: io.confluent.connect.jdbc
+```
