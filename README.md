@@ -1,3 +1,5 @@
+REMOVEME
+
 # RADAR TimescaleDB Sink Connector and JDBC Connector
 
 This project is based on Confluent's Kafka JDBC connector with additional functionalities, namely:
