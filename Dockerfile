@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG BASE_IMAGE=radarbase/kafka-connect-transform-keyvalue:7.2.1
+ARG BASE_IMAGE=radarbase/kafka-connect-transform-keyvalue:7.6.0-hotfix
 
 FROM --platform=$BUILDPLATFORM maven:3.8-jdk-11 as builder
 
