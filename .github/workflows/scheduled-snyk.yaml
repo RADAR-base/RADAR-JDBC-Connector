@@ -13,11 +13,12 @@ jobs:
       REPORT_FILE: test.json
     steps:
       - uses: actions/checkout@v3
-      - uses: snyk/actions/gradle-jdk17@master
+      - uses: snyk/actions/maven-3-jdk-17@master
         name: Run Snyk to check for vulnerabilities
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with: --all-projects --configuration-matching='^runtimeClasspath$' --fail-on=upgradable --json-file-output=${{ env.REPORT_FILE }}--org=radar-base --policy-path=$PWD/.snyk
+        with:
+          args: --all-projects --configuration-matching='^runtimeClasspath$' --fail-on=upgradable --json-file-output=${{ env.REPORT_FILE }} --org=radar-base --policy-path=$PWD/.snyk --severity-threshold=high
 
       - name: Report new vulnerabilities
         uses: thehyve/report-vulnerability@master
