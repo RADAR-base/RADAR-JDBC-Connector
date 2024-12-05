@@ -277,6 +277,13 @@
             <artifactId>sentry-log4j</artifactId>
             <version>${sentry.version}</version>
             <scope>runtime</scope>
+            <exclusions>
+                <exclusion>
+                    <!-- This log4j version is vulnerable to CVE-2021-44228-->
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 
