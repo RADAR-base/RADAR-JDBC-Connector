@@ -42,6 +42,11 @@ COPY ./docker/kafka-wait /usr/bin/kafka-wait
 # Load modified launcher
 COPY ./docker/launch /etc/confluent/docker/launch
 
+# Overwrite the log4j configuration to include Sentry monitoring.
+COPY ./docker/log4j.properties.template /etc/confluent/docker/log4j.properties.template
+# Copy Sentry monitoring jars.
+COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-*/confluentinc-kafka-connect-jdbc-*/lib/sentry-* /etc/kafka-connect/jars
+
 USER root
 # create parent directory for storing offsets in standalone mode
 RUN mkdir -p /var/lib/kafka-connect-jdbc/logs
