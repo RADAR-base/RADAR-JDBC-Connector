@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG BASE_IMAGE=radarbase/kafka-connect-transform-keyvalue:7.6.0-hotfix
+ARG BASE_IMAGE=radarbase/kafka-connect-transform-keyvalue:7.8.1
 
-FROM --platform=$BUILDPLATFORM maven:3.8-jdk-11 as builder
+FROM --platform=$BUILDPLATFORM maven:3.8.8-eclipse-temurin-17-focal AS builder
 
 # Make kafka-connect-jdbc source folder
 RUN mkdir /code /code/kafka-connect-jdbc
@@ -27,11 +27,11 @@ WORKDIR /code
 
 FROM ${BASE_IMAGE}
 
-MAINTAINER @mpgxvii
+LABEL org.opencontainers.image.authors="@mpgxvii"
 
 LABEL description="Kafka JDBC connector"
 
-ENV CONNECT_PLUGIN_PATH /usr/share/kafka-connect/plugins
+ENV CONNECT_PLUGIN_PATH=/usr/share/kafka-connect/plugins
 
 # To isolate the classpath from the plugin path as recommended
 COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-*/confluentinc-kafka-connect-jdbc-*/ ${CONNECT_PLUGIN_PATH}/kafka-connect-jdbc/
