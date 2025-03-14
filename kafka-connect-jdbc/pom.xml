@@ -81,6 +81,7 @@
         <maven-surefire-plugin.version>3.0.0-M7</maven-surefire-plugin.version>
         <maven-failsafe-plugin.version>3.0.0-M7</maven-failsafe-plugin.version>
         <dependency.check.skip>true</dependency.check.skip>
+        <sentry.version>1.7.30</sentry.version>
     </properties>
     <repositories>
         <repository>
@@ -345,6 +346,22 @@
             <artifactId>zookeeper</artifactId>
             <version>${zookeeper.version}</version>
             <scope>test</scope>
+        </dependency>
+
+        <!-- Application monitoring -->
+        <!-- This dependency is not used by the JDBC connector, but copied into the Docker image (Dockerfile) -->
+        <dependency>
+            <groupId>io.sentry</groupId>
+            <artifactId>sentry-log4j</artifactId>
+            <version>${sentry.version}</version>
+            <scope>runtime</scope>
+            <exclusions>
+                <exclusion>
+                    <!-- This log4j version is vulnerable to CVE-2021-44228-->
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 
