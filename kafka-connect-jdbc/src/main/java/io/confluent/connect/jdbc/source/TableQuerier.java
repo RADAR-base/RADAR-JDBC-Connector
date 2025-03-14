@@ -101,7 +101,10 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
       resultSet = executeQuery();
       String schemaName = tableId != null ? tableId.tableName() : null; // backwards compatible
       schemaMapping = SchemaMapping.create(schemaName, resultSet.getMetaData(), dialect);
+    } else {
+      log.trace("Current ResultSet {} isn't null. Continuing to seek.", resultSet.hashCode());
     }
+    log.trace("Prepared statement created.");
   }
 
   protected abstract ResultSet executeQuery() throws SQLException;
@@ -139,7 +142,7 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
       try {
         db.commit();
       } catch (SQLException e) {
-        log.warn("Error while committing read transaction, database locks may still be held", e);
+        log.warn("Error while committing read transaction", e);
       }
     }
     db = null;

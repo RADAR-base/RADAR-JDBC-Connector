@@ -15,7 +15,6 @@
 
 package io.confluent.connect.jdbc.sink;
 
-import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
@@ -24,8 +23,7 @@ import java.sql.SQLException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Optional;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.util.CachedConnectionProvider;
@@ -34,7 +32,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class JdbcDbWriter {
-  private static final Pattern INLINE_VARIABLE_PATTERN = Pattern.compile("\\$\\{(.*?)\\}");
   private static final Logger log = LoggerFactory.getLogger(JdbcDbWriter.class);
 
   private final JdbcSinkConfig config;
@@ -66,10 +63,12 @@ public class JdbcDbWriter {
   void write(final Collection<SinkRecord> records)
       throws SQLException, TableAlterOrCreateException {
     final Connection connection = cachedConnectionProvider.getConnection();
+    String schemaName = getSchemaSafe(connection).orElse(null);
+    String catalogName = getCatalogSafe(connection).orElse(null);
     try {
       final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
       for (SinkRecord record : records) {
-        final TableId tableId = destinationTable(record);
+        final TableId tableId = destinationTable(record.topic(), schemaName, catalogName);
         BufferedRecords buffer = bufferByTable.get(tableId);
         if (buffer == null) {
           buffer = new BufferedRecords(config, tableId, dbDialect, dbStructure, connection);
@@ -84,58 +83,61 @@ public class JdbcDbWriter {
         buffer.flush();
         buffer.close();
       }
+      log.trace("Committing transaction");
       connection.commit();
     } catch (SQLException | TableAlterOrCreateException e) {
+      log.error("Error during write operation. Attempting rollback.", e);
       try {
         connection.rollback();
+        log.info("Successfully rolled back transaction");
       } catch (SQLException sqle) {
+        log.error("Failed to rollback transaction", sqle);
         e.addSuppressed(sqle);
       } finally {
         throw e;
       }
     }
+    log.info("Completed write operation for {} records to the database", records.size());
   }
 
   void closeQuietly() {
     cachedConnectionProvider.close();
   }
 
-  TableId destinationTable(SinkRecord record) {
-    StringBuilder name = new StringBuilder();
-    final String schemaName = destinationSchema(record);
-    if (!schemaName.isEmpty()) {
-      name.append(schemaName).append(".");
-    }
-    name.append(config.tableNameFormat.replace("${topic}", record.topic()));
-
-    final String tableName = name.toString();
+  TableId destinationTable(String topic, String schemaName, String catalogName) {
+    final String tableName = config.tableNameFormat.replace("${topic}", topic);
     if (tableName.isEmpty()) {
       throw new ConnectException(String.format(
           "Destination table name for topic '%s' is empty using the format string '%s'",
-          record.topic(),
+          topic,
           config.tableNameFormat
       ));
     }
-    return dbDialect.parseTableIdentifier(tableName);
+    TableId parsedTableId = dbDialect.parseTableIdentifier(tableName);
+    String finalCatalogName =
+            (parsedTableId.catalogName() != null) ? parsedTableId.catalogName() : catalogName;
+    String finalSchemaName =
+            (parsedTableId.schemaName() != null) ? parsedTableId.schemaName() : schemaName;
+
+
+    return new TableId(finalCatalogName, finalSchemaName, parsedTableId.tableName());
   }
 
-  String destinationSchema(SinkRecord record) {
-    StringBuilder schemaName = new StringBuilder();
-    String schemaNameFormat = config.schemaNameFormat;
-    if (!schemaNameFormat.isEmpty() && (record.key() instanceof Struct)) {
-      Struct keyData = ((Struct) record.key());
-      Matcher matcher = INLINE_VARIABLE_PATTERN.matcher(schemaNameFormat);
-      int lastStart = 0;
-      while (matcher.find()) {
-        String subString = schemaNameFormat.substring(lastStart, matcher.start());
-        String key = matcher.group(1);
-        String replacement = keyData.getString(key);
-        schemaName.append(subString).append(replacement);
-        lastStart = matcher.end();
-      }
-      schemaName.append(schemaNameFormat.substring(lastStart));
+  private Optional<String> getSchemaSafe(Connection connection) {
+    try {
+      return Optional.ofNullable(connection.getSchema());
+    } catch (AbstractMethodError | SQLException e) {
+      log.warn("Failed to get schema: {}", e.getMessage());
+      return Optional.empty();
     }
+  }
 
-    return schemaName.toString().toLowerCase();
+  private Optional<String> getCatalogSafe(Connection connection) {
+    try {
+      return Optional.ofNullable(connection.getCatalog());
+    } catch (AbstractMethodError | SQLException e) {
+      log.warn("Failed to get catalog: {}", e.getMessage());
+      return Optional.empty();
+    }
   }
 }

@@ -16,6 +16,7 @@
 package io.confluent.connect.jdbc.sink;
 
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -33,13 +34,19 @@ import io.confluent.connect.jdbc.util.ConfigUtils;
 import io.confluent.connect.jdbc.util.DatabaseDialectRecommender;
 import io.confluent.connect.jdbc.util.DeleteEnabledRecommender;
 import io.confluent.connect.jdbc.util.EnumRecommender;
+import io.confluent.connect.jdbc.util.JdbcCredentialsProvider;
+import io.confluent.connect.jdbc.util.JdbcCredentialsProviderValidator;
 import io.confluent.connect.jdbc.util.PrimaryKeyModeRecommender;
 import io.confluent.connect.jdbc.util.QuoteMethod;
 import io.confluent.connect.jdbc.util.StringUtils;
 import io.confluent.connect.jdbc.util.TableType;
 import io.confluent.connect.jdbc.util.TimeZoneValidator;
+import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigDef.Importance;
+import org.apache.kafka.common.config.ConfigDef.Type;
+import org.apache.kafka.common.config.ConfigDef.Width;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.types.Password;
 
@@ -57,6 +64,11 @@ public class JdbcSinkConfig extends AbstractConfig {
     KAFKA,
     RECORD_KEY,
     RECORD_VALUE;
+  }
+
+  public enum DateTimezone {
+    DB_TIMEZONE,
+    UTC
   }
 
   public static final List<String> DEFAULT_KAFKA_PK_NAMES = Collections.unmodifiableList(
@@ -112,15 +124,6 @@ public class JdbcSinkConfig extends AbstractConfig {
       + "'kafka_orders'.";
   private static final String TABLE_NAME_FORMAT_DISPLAY = "Table Name Format";
 
-  public static final String SCHEMA_NAME_FORMAT = "schema.name.format";
-  private static final String SCHEMA_NAME_FORMAT_DEFAULT = "public";
-  private static final String SCHEMA_NAME_FORMAT_DOC =
-          "A format string for the destination schema name, which may contain '${key}' as a "
-          + "placeholder for a key in the record key."
-          + "For example, ``${projectId}`` for projectId 'myProject' "
-          + "will map to the schema name 'myProject'.";
-  private static final String SCHEMA_NAME_FORMAT_DISPLAY = "Schema Name Format";
-
   public static final String MAX_RETRIES = "max.retries";
   private static final int MAX_RETRIES_DEFAULT = 10;
   private static final String MAX_RETRIES_DOC =
@@ -147,8 +150,15 @@ public class JdbcSinkConfig extends AbstractConfig {
       + "to be ``record_key``.";
   private static final String DELETE_ENABLED_DISPLAY = "Enable deletes";
 
+  public static final String REPLACE_NULL_WITH_DEFAULT = "replace.null.with.default";
+  private static final String REPLACE_NULL_WITH_DEFAULT_DEFAULT = "true";
+  private static final String REPLACE_NULL_WITH_DEFAULT_DOC =
+      "Whether to replace ``null`` value with default value";
+  private static final String REPLACE_NULL_WITH_DEFAULT_DISPLAY = "Replace null value with "
+      + "default value";
+
   public static final String AUTO_CREATE = "auto.create";
-  private static final String AUTO_CREATE_DEFAULT = "true";
+  private static final String AUTO_CREATE_DEFAULT = "false";
   private static final String AUTO_CREATE_DOC =
       "Whether to automatically create the destination table based on record schema if it is "
       + "found to be missing by issuing ``CREATE``.";
@@ -224,6 +234,7 @@ public class JdbcSinkConfig extends AbstractConfig {
   private static final String WRITES_GROUP = "Writes";
   private static final String DATAMAPPING_GROUP = "Data Mapping";
   private static final String DDL_GROUP = "DDL Support";
+  private static final String DML_GROUP = "DML Support";
   private static final String RETRIES_GROUP = "Retries";
 
   public static final String DIALECT_NAME_CONFIG = "dialect.name";
@@ -243,6 +254,14 @@ public class JdbcSinkConfig extends AbstractConfig {
       + "inserting time-based values. Defaults to UTC.";
   private static final String DB_TIMEZONE_CONFIG_DISPLAY = "DB Time Zone";
 
+  public static final String DATE_TIMEZONE_CONFIG = "date.timezone";
+  public static final String DATE_TIMEZONE_DEFAULT = DateTimezone.DB_TIMEZONE.toString();
+  private static final String DATE_TIMEZONE_CONFIG_DISPLAY = "Time Zone used for Date";
+  private static final String DATE_TIMEZONE_CONFIG_DOC = "Name of the JDBC timezone that should be "
+      + "used in the connector when inserting DATE type values. Defaults to DB_TIMEZONE that uses "
+      + "the timezone set for db.timzeone configuration (to maintain backward compatibility). It "
+      + "is recommended to set this to UTC to avoid conversion for DATE type values.";
+
   public static final String QUOTE_SQL_IDENTIFIERS_CONFIG =
       JdbcSourceConnectorConfig.QUOTE_SQL_IDENTIFIERS_CONFIG;
   public static final String QUOTE_SQL_IDENTIFIERS_DEFAULT =
@@ -258,16 +277,47 @@ public class JdbcSinkConfig extends AbstractConfig {
   private static final String TABLE_TYPES_DOC =
       "The comma-separated types of database tables to which the sink connector can write. "
       + "By default this is ``" + TableType.TABLE + "``, but any combination of ``"
-      + TableType.TABLE + "`` and ``" + TableType.VIEW + "`` is allowed. Not all databases "
-      + "support writing to views, and when they do the the sink connector will fail if the "
+      + TableType.TABLE + "``, ``" + TableType.PARTITIONED_TABLE + "`` and ``"
+      + TableType.VIEW + "`` is allowed. Not all databases support writing to views, "
+      + "and when they do the sink connector will fail if the "
       + "view definition does not match the records' schemas (regardless of ``"
       + AUTO_EVOLVE + "``).";
 
+  public static final String TRIM_SENSITIVE_LOG_ENABLED = "trim.sensitive.log";
+  private static final String TRIM_SENSITIVE_LOG_ENABLED_DEFAULT = "false";
   private static final EnumRecommender QUOTE_METHOD_RECOMMENDER =
       EnumRecommender.in(QuoteMethod.values());
 
+  private static final EnumRecommender DATE_TIMEZONE_RECOMMENDER =
+      EnumRecommender.in(DateTimezone.values());
+
   private static final EnumRecommender TABLE_TYPES_RECOMMENDER =
       EnumRecommender.in(TableType.values());
+  public static final String MSSQL_USE_MERGE_HOLDLOCK = "mssql.use.merge.holdlock";
+  private static final String MSSQL_USE_MERGE_HOLDLOCK_DEFAULT = "true";
+  private static final String MSSQL_USE_MERGE_HOLDLOCK_DOC =
+      "Whether to use HOLDLOCK when performing a MERGE INTO upsert statement. "
+      + "Note that it is only applicable to SQL Server.";
+  private static final String MSSQL_USE_MERGE_HOLDLOCK_DISPLAY =
+      "SQL Server - Use HOLDLOCK in MERGE";
+
+  /**
+   * The properties that begin with this prefix will be used to configure a class, specified by
+   * {@code jdbc.credentials.provider.class} if it implements {@link Configurable}.
+   */
+  public static final String CREDENTIALS_PROVIDER_CONFIG_PREFIX =
+      JdbcSourceConnectorConfig.CREDENTIALS_PROVIDER_CONFIG_PREFIX;
+  public static final String CREDENTIALS_PROVIDER_CLASS_CONFIG =
+      JdbcSourceConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG;
+  public static final Class<? extends JdbcCredentialsProvider> CREDENTIALS_PROVIDER_CLASS_DEFAULT =
+      JdbcSourceConnectorConfig.CREDENTIALS_PROVIDER_CLASS_DEFAULT;
+
+  public static final String CREDENTIALS_PROVIDER_CLASS_DISPLAY =
+      JdbcSourceConnectorConfig.CREDENTIALS_PROVIDER_CLASS_DISPLAY;
+
+  public static final String CREDENTIALS_PROVIDER_CLASS_DOC =
+      JdbcSourceConnectorConfig.CREDENTIALS_PROVIDER_CLASS_DOC;
+
 
   public static final ConfigDef CONFIG_DEF = new ConfigDef()
         // Connection
@@ -303,8 +353,18 @@ public class JdbcSinkConfig extends AbstractConfig {
             3,
             ConfigDef.Width.MEDIUM,
             CONNECTION_PASSWORD_DISPLAY
-        )
-        .define(
+        ).define(
+            CREDENTIALS_PROVIDER_CLASS_CONFIG,
+            Type.CLASS,
+            CREDENTIALS_PROVIDER_CLASS_DEFAULT,
+            new JdbcCredentialsProviderValidator(),
+            Importance.LOW,
+            CREDENTIALS_PROVIDER_CLASS_DOC,
+            CONNECTION_GROUP,
+            4,
+            Width.LONG,
+            CREDENTIALS_PROVIDER_CLASS_DISPLAY
+      ).define(
             DIALECT_NAME_CONFIG,
             ConfigDef.Type.STRING,
             DIALECT_NAME_DEFAULT,
@@ -312,7 +372,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.LOW,
             DIALECT_NAME_DOC,
             CONNECTION_GROUP,
-            4,
+            5,
             ConfigDef.Width.LONG,
             DIALECT_NAME_DISPLAY,
             DatabaseDialectRecommender.INSTANCE
@@ -325,7 +385,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.LOW,
             CONNECTION_ATTEMPTS_DOC,
             CONNECTION_GROUP,
-            5,
+            6,
             ConfigDef.Width.SHORT,
             CONNECTION_ATTEMPTS_DISPLAY
         ).define(
@@ -335,7 +395,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.LOW,
             CONNECTION_BACKOFF_DOC,
             CONNECTION_GROUP,
-            6,
+            7,
             ConfigDef.Width.SHORT,
             CONNECTION_BACKOFF_DISPLAY
         )
@@ -386,6 +446,17 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Width.MEDIUM,
             TABLE_TYPES_DISPLAY
         )
+        .define(
+            REPLACE_NULL_WITH_DEFAULT,
+            ConfigDef.Type.BOOLEAN,
+            REPLACE_NULL_WITH_DEFAULT_DEFAULT,
+            ConfigDef.Importance.LOW,
+            REPLACE_NULL_WITH_DEFAULT_DOC,
+            WRITES_GROUP,
+            5,
+            ConfigDef.Width.MEDIUM,
+            REPLACE_NULL_WITH_DEFAULT_DISPLAY
+        )
         // Data Mapping
         .define(
             TABLE_NAME_FORMAT,
@@ -399,17 +470,6 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Width.LONG,
             TABLE_NAME_FORMAT_DISPLAY
         )
-          .define(
-                  SCHEMA_NAME_FORMAT,
-                  ConfigDef.Type.STRING,
-                  SCHEMA_NAME_FORMAT_DEFAULT,
-                  ConfigDef.Importance.MEDIUM,
-                  SCHEMA_NAME_FORMAT_DOC,
-                  DATAMAPPING_GROUP,
-                  6,
-                  ConfigDef.Width.LONG,
-                  SCHEMA_NAME_FORMAT_DISPLAY
-          )
         .define(
             PK_MODE,
             ConfigDef.Type.STRING,
@@ -455,6 +515,19 @@ public class JdbcSinkConfig extends AbstractConfig {
           ConfigDef.Width.MEDIUM,
           DB_TIMEZONE_CONFIG_DISPLAY
         )
+        .define(
+            DATE_TIMEZONE_CONFIG,
+            ConfigDef.Type.STRING,
+            DATE_TIMEZONE_DEFAULT,
+            EnumValidator.in(DateTimezone.values()),
+            ConfigDef.Importance.LOW,
+            DATE_TIMEZONE_CONFIG_DOC,
+            DATAMAPPING_GROUP,
+            6,
+            ConfigDef.Width.MEDIUM,
+            DATE_TIMEZONE_CONFIG_DISPLAY,
+            DATE_TIMEZONE_RECOMMENDER
+        )
         // DDL
         .define(
             AUTO_CREATE,
@@ -487,6 +560,18 @@ public class JdbcSinkConfig extends AbstractConfig {
             QUOTE_SQL_IDENTIFIERS_DISPLAY,
             QUOTE_METHOD_RECOMMENDER
         )
+        // DML
+        .define(
+            MSSQL_USE_MERGE_HOLDLOCK,
+            ConfigDef.Type.BOOLEAN,
+            MSSQL_USE_MERGE_HOLDLOCK_DEFAULT,
+            ConfigDef.Importance.LOW,
+            MSSQL_USE_MERGE_HOLDLOCK_DOC,
+            DML_GROUP,
+            1,
+            ConfigDef.Width.MEDIUM,
+            MSSQL_USE_MERGE_HOLDLOCK_DISPLAY
+        )
         // Retries
         .define(
             MAX_RETRIES,
@@ -511,6 +596,12 @@ public class JdbcSinkConfig extends AbstractConfig {
             2,
             ConfigDef.Width.SHORT,
             RETRY_BACKOFF_MS_DISPLAY
+        )
+        .defineInternal(
+            TRIM_SENSITIVE_LOG_ENABLED,
+            ConfigDef.Type.BOOLEAN,
+            TRIM_SENSITIVE_LOG_ENABLED_DEFAULT,
+            ConfigDef.Importance.LOW
         );
 
   public final String connectorName;
@@ -520,9 +611,9 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final int connectionAttempts;
   public final long connectionBackoffMs;
   public final String tableNameFormat;
-  public final String schemaNameFormat;
   public final int batchSize;
   public final boolean deleteEnabled;
+  public final boolean replaceNullWithDefault;
   public final int maxRetries;
   public final int retryBackoffMs;
   public final boolean autoCreate;
@@ -533,7 +624,11 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final Set<String> fieldsWhitelist;
   public final String dialectName;
   public final TimeZone timeZone;
+  public final TimeZone dateTimeZone;
   public final EnumSet<TableType> tableTypes;
+  public final boolean useHoldlockInMerge;
+
+  public final boolean trimSensitiveLogsEnabled;
 
   public JdbcSinkConfig(Map<?, ?> props) {
     super(CONFIG_DEF, props);
@@ -544,9 +639,9 @@ public class JdbcSinkConfig extends AbstractConfig {
     connectionAttempts = getInt(CONNECTION_ATTEMPTS);
     connectionBackoffMs = getLong(CONNECTION_BACKOFF);
     tableNameFormat = getString(TABLE_NAME_FORMAT).trim();
-    schemaNameFormat = getString(SCHEMA_NAME_FORMAT).trim();
     batchSize = getInt(BATCH_SIZE);
     deleteEnabled = getBoolean(DELETE_ENABLED);
+    replaceNullWithDefault = getBoolean(REPLACE_NULL_WITH_DEFAULT);
     maxRetries = getInt(MAX_RETRIES);
     retryBackoffMs = getInt(RETRY_BACKOFF_MS);
     autoCreate = getBoolean(AUTO_CREATE);
@@ -558,7 +653,12 @@ public class JdbcSinkConfig extends AbstractConfig {
     fieldsWhitelist = new HashSet<>(getList(FIELDS_WHITELIST));
     String dbTimeZone = getString(DB_TIMEZONE_CONFIG);
     timeZone = TimeZone.getTimeZone(ZoneId.of(dbTimeZone));
-
+    DateTimezone dateTimezoneConfig =
+        DateTimezone.valueOf(getString(DATE_TIMEZONE_CONFIG).toUpperCase());
+    dateTimeZone = dateTimezoneConfig.equals(DateTimezone.UTC)
+        ? TimeZone.getTimeZone(ZoneOffset.UTC) : timeZone;
+    useHoldlockInMerge = getBoolean(MSSQL_USE_MERGE_HOLDLOCK);
+    trimSensitiveLogsEnabled = getBoolean(TRIM_SENSITIVE_LOG_ENABLED);
     if (deleteEnabled && pkMode != PrimaryKeyMode.RECORD_KEY) {
       throw new ConfigException(
           "Primary key mode must be 'record_key' when delete support is enabled");
