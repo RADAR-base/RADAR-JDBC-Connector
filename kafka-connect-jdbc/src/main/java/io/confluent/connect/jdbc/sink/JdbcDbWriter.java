@@ -15,6 +15,7 @@
 
 package io.confluent.connect.jdbc.sink;
 
+import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
@@ -24,6 +25,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.util.CachedConnectionProvider;
@@ -32,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class JdbcDbWriter {
+  private static final Pattern INLINE_VARIABLE_PATTERN = Pattern.compile("\\$\\{(.*?)\\}");
   private static final Logger log = LoggerFactory.getLogger(JdbcDbWriter.class);
 
   private final JdbcSinkConfig config;
@@ -60,15 +64,14 @@ public class JdbcDbWriter {
     };
   }
 
-  void write(final Collection<SinkRecord> records)
-      throws SQLException, TableAlterOrCreateException {
+  void write(final Collection<SinkRecord> records) throws SQLException {
     final Connection connection = cachedConnectionProvider.getConnection();
     String schemaName = getSchemaSafe(connection).orElse(null);
     String catalogName = getCatalogSafe(connection).orElse(null);
     try {
       final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
       for (SinkRecord record : records) {
-        final TableId tableId = destinationTable(record.topic(), schemaName, catalogName);
+        final TableId tableId = destinationTable(record);
         BufferedRecords buffer = bufferByTable.get(tableId);
         if (buffer == null) {
           buffer = new BufferedRecords(config, tableId, dbDialect, dbStructure, connection);
@@ -121,6 +124,43 @@ public class JdbcDbWriter {
 
 
     return new TableId(finalCatalogName, finalSchemaName, parsedTableId.tableName());
+  }
+
+  TableId destinationTable(SinkRecord record) {
+    StringBuilder name = new StringBuilder();
+    final String schemaName = destinationSchema(record);
+    if (!schemaName.isEmpty()) {
+      name.append(schemaName).append(".");
+    }
+    name.append(config.tableNameFormat.replace("${topic}", record.topic()));
+    final String tableName = name.toString();
+    if (tableName.isEmpty()) {
+      throw new ConnectException(String.format(
+            "Destination table name for topic '%s' is empty using the format string '%s'",
+            record.topic(),
+            config.tableNameFormat
+      ));
+    }
+    return dbDialect.parseTableIdentifier(tableName);
+  }
+
+  String destinationSchema(SinkRecord record) {
+    StringBuilder schemaName = new StringBuilder();
+    String schemaNameFormat = config.schemaNameFormat;
+    if (!schemaNameFormat.isEmpty() && (record.key() instanceof Struct)) {
+      Struct keyData = ((Struct) record.key());
+      Matcher matcher = INLINE_VARIABLE_PATTERN.matcher(schemaNameFormat);
+      int lastStart = 0;
+      while (matcher.find()) {
+        String subString = schemaNameFormat.substring(lastStart, matcher.start());
+        String key = matcher.group(1);
+        String replacement = keyData.getString(key);
+        schemaName.append(subString).append(replacement);
+        lastStart = matcher.end();
+      }
+      schemaName.append(schemaNameFormat.substring(lastStart));
+    }
+    return schemaName.toString().toLowerCase();
   }
 
   private Optional<String> getSchemaSafe(Connection connection) {
