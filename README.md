@@ -38,6 +38,31 @@ docker-compose up -d --build
 Code should be formatted using the [Google Java Code Style Guide](https://google.github.io/styleguide/javaguide.html).
 If you want to contribute a feature or fix browse our [issues](https://github.com/RADAR-base/RADAR-REST-Connector/issues), and please make a pull request.
 
+## Upgrading
+
+This repository is  a fork of Confluent's JDBC connector. This repository is present as a _git subtree_ directory `kafka-jdbc-connector`. 
+To upgrade to a newer version of the JDBC connector, follow these steps:
+
+1. Set subtree pull strategy to _rebase_:
+
+```shell
+git config pull.rebase true
+```
+
+2. Add the Confluent repository as a remote:
+
+```shell
+git remote add upstream git@github.com:confluentinc/kafka-connect-jdbc.git
+```
+
+3. Pull the latest changes from the Confluent repository. For instance to pull the latest changes from the `10.8.x` tag:
+
+```shell
+ git pull -s subtree upstream 10.8.x
+```
+
+4. Resolve any conflicts that may arise.
+
 
 ## Sentry monitoring
 
