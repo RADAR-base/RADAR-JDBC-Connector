@@ -24,6 +24,7 @@ import java.sql.SQLException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -63,9 +64,10 @@ public class JdbcDbWriter {
     };
   }
 
-  void write(final Collection<SinkRecord> records)
-      throws SQLException, TableAlterOrCreateException {
+  void write(final Collection<SinkRecord> records) throws SQLException {
     final Connection connection = cachedConnectionProvider.getConnection();
+    String schemaName = getSchemaSafe(connection).orElse(null);
+    String catalogName = getCatalogSafe(connection).orElse(null);
     try {
       final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
       for (SinkRecord record : records) {
@@ -84,20 +86,44 @@ public class JdbcDbWriter {
         buffer.flush();
         buffer.close();
       }
+      log.trace("Committing transaction");
       connection.commit();
     } catch (SQLException | TableAlterOrCreateException e) {
+      log.error("Error during write operation. Attempting rollback.", e);
       try {
         connection.rollback();
+        log.info("Successfully rolled back transaction");
       } catch (SQLException sqle) {
+        log.error("Failed to rollback transaction", sqle);
         e.addSuppressed(sqle);
       } finally {
         throw e;
       }
     }
+    log.info("Completed write operation for {} records to the database", records.size());
   }
 
   void closeQuietly() {
     cachedConnectionProvider.close();
+  }
+
+  TableId destinationTable(String topic, String schemaName, String catalogName) {
+    final String tableName = config.tableNameFormat.replace("${topic}", topic);
+    if (tableName.isEmpty()) {
+      throw new ConnectException(String.format(
+          "Destination table name for topic '%s' is empty using the format string '%s'",
+          topic,
+          config.tableNameFormat
+      ));
+    }
+    TableId parsedTableId = dbDialect.parseTableIdentifier(tableName);
+    String finalCatalogName =
+            (parsedTableId.catalogName() != null) ? parsedTableId.catalogName() : catalogName;
+    String finalSchemaName =
+            (parsedTableId.schemaName() != null) ? parsedTableId.schemaName() : schemaName;
+
+
+    return new TableId(finalCatalogName, finalSchemaName, parsedTableId.tableName());
   }
 
   TableId destinationTable(SinkRecord record) {
@@ -107,13 +133,12 @@ public class JdbcDbWriter {
       name.append(schemaName).append(".");
     }
     name.append(config.tableNameFormat.replace("${topic}", record.topic()));
-
     final String tableName = name.toString();
     if (tableName.isEmpty()) {
       throw new ConnectException(String.format(
-          "Destination table name for topic '%s' is empty using the format string '%s'",
-          record.topic(),
-          config.tableNameFormat
+            "Destination table name for topic '%s' is empty using the format string '%s'",
+            record.topic(),
+            config.tableNameFormat
       ));
     }
     return dbDialect.parseTableIdentifier(tableName);
@@ -135,7 +160,24 @@ public class JdbcDbWriter {
       }
       schemaName.append(schemaNameFormat.substring(lastStart));
     }
-
     return schemaName.toString().toLowerCase();
+  }
+
+  private Optional<String> getSchemaSafe(Connection connection) {
+    try {
+      return Optional.ofNullable(connection.getSchema());
+    } catch (AbstractMethodError | SQLException e) {
+      log.warn("Failed to get schema: {}", e.getMessage());
+      return Optional.empty();
+    }
+  }
+
+  private Optional<String> getCatalogSafe(Connection connection) {
+    try {
+      return Optional.ofNullable(connection.getCatalog());
+    } catch (AbstractMethodError | SQLException e) {
+      log.warn("Failed to get catalog: {}", e.getMessage());
+      return Optional.empty();
+    }
   }
 }

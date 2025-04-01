@@ -6,6 +6,9 @@ This project is based on Confluent's Kafka JDBC connector with additional functi
 2. Support for multiple `createTable` statements.
 3. Support for schema creation and setting of schema name format in the connector config.
 4. Support for `TIMESTAMPTZ` data type in `PostgreSQL` databases.
+5. Add a custom JDBC Credential Provider to support receiving database username and password from environmental
+   variables.
+6. Sentry monitoring for the JDBC connector.
 
 ## Connect Single Message Transform
 
@@ -14,7 +17,8 @@ See [RADAR-base
 /
 kafka-connect-transform-keyvalue](https://github.com/RADAR-base/kafka-connect-transform-keyvalue) for more information.
 
-If you're using Docker, the transform plugin image is included in the Dockerfile. If you're installing manually, the `kafka-connect-transform-keyvalue` plugin must be installed to your Confluent plugin path.
+If you're using Docker, the transform plugin image is included in the Dockerfile. If you're installing manually, the
+`kafka-connect-transform-keyvalue` plugin must be installed to your Confluent plugin path.
 
 ## TimescaleDB Sink Connector
 
@@ -25,19 +29,57 @@ of Java 8 or later.
 
 ### Usage
 
-Copy `docker/sink-timescale.properties.template` to `docker/sink-timescale.properties` and enter your database connection URL, username, and password.
+Copy `docker/sink-timescale.properties.template` to `docker/sink-timescale.properties` and enter your database
+connection URL, username, and password.
 
-Now you can run a full Kafka stack using
+To localy deploy a full Kafka stack (for development and testing) you can now run:
 
 ```shell
 docker-compose up -d --build
 ```
 
+#### Database credentials from environmental variables
+
+In order to receive database credentials from environmental variables, set the `CONNECT_JDBC_CONNECTION_USER` and
+`CONNECT_JDBC_CONNECTION_PASSWORD` environmental variables with values for the database username and password
+respectively. In addition, set the `jdbc.credentials.provider.class` property in the `docker/sink-timescale.properties` file to
+`io.confluent.connect.jdbc.util.EnvVarsJdbcCredentialsProvider` like so:
+
+```shell
+jdbc.credentials.provider.class = io.confluent.connect.jdbc.util.EnvVarsJdbcCredentialsProvider
+```
+
 ## Contributing
 
 Code should be formatted using the [Google Java Code Style Guide](https://google.github.io/styleguide/javaguide.html).
-If you want to contribute a feature or fix browse our [issues](https://github.com/RADAR-base/RADAR-REST-Connector/issues), and please make a pull request.
+If you want to contribute a feature or fix browse
+our [issues](https://github.com/RADAR-base/RADAR-REST-Connector/issues), and please make a pull request.
 
+## Upgrading
+
+This repository is a fork of Confluent's JDBC connector. This repository is present as a _git subtree_ directory
+`kafka-jdbc-connector`.
+To upgrade to a newer version of the JDBC connector, follow these steps:
+
+1. Set subtree pull strategy to _rebase_:
+
+```shell
+git config pull.rebase true
+```
+
+2. Add the Confluent repository as a remote:
+
+```shell
+git remote add upstream git@github.com:confluentinc/kafka-connect-jdbc.git
+```
+
+3. Pull the latest changes from the Confluent repository. For instance to pull the latest changes from the `10.8.x` tag:
+
+```shell
+ git pull -s subtree upstream 10.8.x
+```
+
+4. Resolve any conflicts that may arise.
 
 ## Sentry monitoring
 
@@ -49,7 +91,9 @@ To enable Sentry monitoring for the JDBC connector, follow these steps:
    The default log level for Sentry is `WARN`. Possible values are `TRACE`, `DEBUG`, `INFO`, `WARN`,
    and `ERROR`.
 
-For further configuration of Sentry via environmental variables see [here](https://docs.sentry.io/platforms/java/configuration/#configuration-via-the-runtime-environment). For instance:
+For further configuration of Sentry via environmental variables
+see [here](https://docs.sentry.io/platforms/java/configuration/#configuration-via-the-runtime-environment). For
+instance:
 
 ```
 SENTRY_LOG_LEVEL: 'ERROR'
