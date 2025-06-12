@@ -37,7 +37,7 @@ ENV CONNECT_PLUGIN_PATH=/usr/share/kafka-connect/plugins
 COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-*/confluentinc-kafka-connect-jdbc-*/ ${CONNECT_PLUGIN_PATH}/kafka-connect-jdbc/
 
 # Load topics validator
-COPY ./docker/kafka-wait /usr/bin/kafka-wait
+COPY ./docker/ensure /etc/confluent/docker/ensure
 
 # Load modified launcher
 COPY ./docker/launch /etc/confluent/docker/launch
