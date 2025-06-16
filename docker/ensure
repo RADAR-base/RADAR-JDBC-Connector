@@ -1,8 +1,15 @@
 #!/bin/bash
 
+if [ "$WAIT_FOR_KAFKA" != "1" ]; then
+  echo "Starting without checking for Kafka availability"
+  exit 0
+fi
+
 max_timeout=32
 
 IS_TEMP=0
+
+echo "===> Wait for infrastructure ..."
 
 if [ -z "$COMMAND_CONFIG_FILE_PATH" ]; then
     COMMAND_CONFIG_FILE_PATH="$(mktemp)"
