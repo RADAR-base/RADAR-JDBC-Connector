@@ -46,6 +46,6 @@ COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluen
 COPY --from=hub /tmp/deps/* ${CONNECT_PLUGIN_PATH}/
 RUN ln -s ${CONNECT_PLUGIN_PATH}/confluentinc-kafka-connect-avro-converter/lib/kafka-schema-registry-client*.jar ${CONNECT_PLUGIN_PATH}/kafka-connect-jdbc/lib/kafka-schema-registry-client.jar
 # Copy Sentry monitoring .
-COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-*/confluentinc-kafka-connect-jdbc-*/lib/sentry-* /opt/kafka/libs
+COPY --from=builder /code/kafka-connect-jdbc/target/components/packages/confluentinc-kafka-connect-jdbc-*/confluentinc-kafka-connect-jdbc-*/lib/sentry-* /opt/kafka/libs/
 
 USER 1001
