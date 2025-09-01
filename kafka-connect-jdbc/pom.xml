@@ -54,7 +54,7 @@
 
     <properties>
 
-        <project.version>10.8.0</project.version>
+        <project.version>10.8.1</project.version>
 
         <derby.version>10.14.2.0</derby.version>
         <commons-io.version>2.4</commons-io.version>
