@@ -1,38 +1,50 @@
 name: Docker image
-# Controls when the action will run.
+
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
   push:
     branches: [master, dev]
 
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 env:
-  DOCKER_IMAGE: radarbase/radar-jdbc-connector
+  REGISTRY: ghcr.io
+  REPOSITORY: ${{ github.repository }}
+  IMAGE_NAME: radar-jdbc-connector
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # Build and push tagged release docker image
   docker:
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase image name
+        run: |
+          echo "DOCKER_IMAGE=${REGISTRY}/${REPOSITORY,,}/${IMAGE_NAME}" >>${GITHUB_ENV}
 
       # Add Docker labels and tags
       - name: Docker meta
         id: docker_meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=ref,event=branch
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
 
       - name: Cache Docker layers
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           # Key is named differently to avoid collision
@@ -40,21 +52,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push
+      - name: Build docker image and push
         id: docker_build
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
-          # Allow running the image on the architectures supported by openjdk:11-jre-slim
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           context: .
@@ -63,8 +64,8 @@ jobs:
           # Use runtime labels from docker_meta as well as fixed labels
           labels: |
             ${{ steps.docker_meta.outputs.labels }}
-            maintainer=Joris Borgdorff <joris@thehyve.nl>
-            org.opencontainers.image.authors=Pauline Conde @mpgxvii, Joris Borgdorff <joris@thehyve.nl>
+            maintainer=Pim van Nierop <pim@thehyve.nl>
+            org.opencontainers.image.authors=Pauline Conde @mpgxvii, Pim van Nierop <pim@thehyve.nl>
             org.opencontainers.image.vendor=RADAR-base
             org.opencontainers.image.licenses=Apache-2.0
 

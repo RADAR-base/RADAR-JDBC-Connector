@@ -54,7 +54,7 @@
 
     <properties>
 
-        <project.version>10.8.0</project.version>
+        <project.version>10.8.1</project.version>
 
         <derby.version>10.14.2.0</derby.version>
         <commons-io.version>2.4</commons-io.version>
@@ -104,12 +104,22 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.15.0</version>
+            <version>2.15.4</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>2.15.4</version>
         </dependency>
         <dependency>
             <groupId>org.xerial.snappy</groupId>
             <artifactId>snappy-java</artifactId>
             <version>1.1.10.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.18.0</version>
         </dependency>
 
         <dependency>
